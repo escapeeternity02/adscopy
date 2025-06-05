@@ -23,7 +23,7 @@ def load_data():
         print(Fore.RED + "Resetting corrupted data.json...")
         data = {
             "groups": [],
-            "frequency": 45,
+            "frequency": 15,
             "mode": "random",
             "last_sent_ad_index": 0
         }
