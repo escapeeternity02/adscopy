@@ -109,7 +109,7 @@ async def ad_sender(client):
             await asyncio.sleep(30)
 
 async def command_handler(client):
-    @client.on(events.NewMessage())
+    @client.on(events.NewMessage(incoming=True))
     async def handler(event):
         sender = await event.get_sender()
         if sender is None:
@@ -123,7 +123,10 @@ async def command_handler(client):
 
         if not is_admin and is_private:
             for admin in admins:
-                await client.send_message(admin, f"📩 *New DM*\n👤 {sender.first_name} (@{sender.username})\n🆔 {sender.id}\n📝 {event.text}")
+                try:
+                    await client.send_message(admin, f"📩 *New DM*\n👤 {sender.first_name} (@{sender.username})\n🆔 {sender.id}\n📝 {event.text}")
+                except:
+                    pass
 
             await event.reply(
                 "👋 Welcome! I am a promotional bot.\nIf you’re interested in buying, choose an option below 👇",
@@ -168,7 +171,7 @@ async def command_handler(client):
             else:
                 await event.reply("Usage: !addadmin <user_id>")
 
-    @client.on(events.NewMessage())
+    @client.on(events.NewMessage(incoming=True))
     async def group_reply_detector(event):
         if event.is_group and event.is_reply:
             replied_msg = await event.get_reply_message()
