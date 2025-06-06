@@ -1,6 +1,10 @@
 {
   "groups": [],
   "frequency": 15,
+  "per_group_freq": {},
   "mode": "random",
-  "last_sent_ad_index": 0
+  "last_sent_ad_index": 0,
+  "admins": [6249999953],
+  "allgroup": false,
+  "log": []
 }
