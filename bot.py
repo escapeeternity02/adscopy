@@ -69,8 +69,8 @@ async def ad_sender(client):
                 await asyncio.sleep(60)
                 continue
 
-            groups = await client.get_dialogs()
-            group_dict = {g.entity.id: g.name for g in groups if g.is_group}
+            dialogs = await client.get_dialogs()
+            group_dict = {str(g.entity.id): g.name for g in dialogs if g.is_group}
 
             target_groups = data["groups"].keys() if not data.get("allgroup") else group_dict.keys()
             print(Fore.CYAN + f"Sending ads to {len(list(target_groups))} group(s)...")
@@ -115,10 +115,7 @@ async def command_handler(client):
 
         if not is_admin and is_private:
             for admin in admins:
-                await client.send_message(admin, f"""📩 *New DM*
-👤 {sender.first_name} (@{sender.username})
-🆔 {sender.id}
-📝 {event.text}""")
+                await client.send_message(admin, f"📩 *New DM*\n👤 {sender.first_name} (@{sender.username})\n🆔 {sender.id}\n📝 {event.text}")
 
             await event.reply(
                 "👋 Welcome! I am a promotional bot.\nIf you’re interested in buying, choose an option below 👇",
