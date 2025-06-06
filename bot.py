@@ -73,10 +73,11 @@ async def ad_sender(client):
             group_dict = {g.entity.id: g.name for g in groups if g.is_group}
 
             target_groups = data["groups"].keys() if not data.get("allgroup") else group_dict.keys()
-            print(Fore.CYAN + f"Sending ads to {len(target_groups)} group(s)...")
+            print(Fore.CYAN + f"Sending ads to {len(list(target_groups))} group(s)...")
 
             for gid in target_groups:
                 try:
+                    gid_str = str(gid)
                     if data["mode"] == "random":
                         msg = random.choice(saved_messages)
                     else:
@@ -85,13 +86,13 @@ async def ad_sender(client):
                         data["last_sent_ad_index"] += 1
                         save_data(data)
 
-                    await client.forward_messages(gid, msg.id, "me")
+                    await client.forward_messages(int(gid), msg.id, "me")
                     print(Fore.GREEN + f"Forwarded ad to {gid}")
 
-                    data['log'].append({"time": str(datetime.now()), "group": gid})
+                    data['log'].append({"time": str(datetime.now()), "group": gid_str})
                     save_data(data)
 
-                    freq = data["groups"].get(str(gid), data["frequency"])
+                    freq = data["groups"].get(gid_str, data["frequency"])
                     await asyncio.sleep(random.uniform(10, 20))
                 except Exception as e:
                     print(Fore.RED + f"Error sending to group {gid}: {e}")
@@ -114,7 +115,10 @@ async def command_handler(client):
 
         if not is_admin and is_private:
             for admin in admins:
-                await client.send_message(admin, f"📩 *New DM*\n👤 {sender.first_name} (@{sender.username})\n🆔 {sender.id}\n📝 {event.text}")
+                await client.send_message(admin, f"""📩 *New DM*
+👤 {sender.first_name} (@{sender.username})
+🆔 {sender.id}
+📝 {event.text}""")
 
             await event.reply(
                 "👋 Welcome! I am a promotional bot.\nIf you’re interested in buying, choose an option below 👇",
@@ -128,7 +132,36 @@ async def command_handler(client):
         if not is_admin:
             return
 
-        # ... (the rest of your command handler code remains unchanged)
+        if cmd.startswith("!dm"):
+            parts = cmd.split(maxsplit=2)
+            if len(parts) < 3:
+                await event.reply("Usage: !dm <user_id/@username> <message>")
+            else:
+                try:
+                    await client.send_message(parts[1], parts[2])
+                    await event.reply("✅ Message sent.")
+                except Exception as e:
+                    await event.reply(f"❌ Failed to send: {e}")
+
+        elif cmd == "!groups":
+            text = "📋 *Group List:*\n"
+            groups = await client.get_dialogs()
+            for g in groups:
+                if g.is_group:
+                    text += f"{g.name} — `{g.entity.id}`\n"
+            await event.reply(text)
+
+        elif cmd.startswith("!addadmin"):
+            parts = cmd.split()
+            if len(parts) == 2 and parts[1].isdigit():
+                if int(parts[1]) not in data["admins"]:
+                    data["admins"].append(int(parts[1]))
+                    save_data(data)
+                    await event.reply("✅ Admin added.")
+                else:
+                    await event.reply("User is already an admin.")
+            else:
+                await event.reply("Usage: !addadmin <user_id>")
 
     @client.on(events.NewMessage())
     async def group_reply_detector(event):
