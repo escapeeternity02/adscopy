@@ -1,7 +1,10 @@
+# bot.py
 import os
 import json
 import asyncio
 import random
+import time
+from datetime import datetime, timedelta
 from telethon import TelegramClient, events
 from telethon.tl.functions.messages import GetHistoryRequest
 from aiohttp import web
@@ -11,10 +14,12 @@ init(autoreset=True)
 
 CREDENTIALS_FOLDER = "sessions"
 DATA_FILE = "data.json"
-ADMIN_ID = 7356129001
+ADMIN_IDS = [6249999953]  # Add multiple admin IDs here
+START_TIME = time.time()
 
 os.makedirs(CREDENTIALS_FOLDER, exist_ok=True)
 
+# ========== Data Handling ==========
 def load_data():
     try:
         with open(DATA_FILE, 'r') as f:
@@ -24,16 +29,21 @@ def load_data():
         data = {
             "groups": [],
             "frequency": 15,
+            "per_group_freq": {},
             "mode": "random",
-            "last_sent_ad_index": 0
+            "last_sent_ad_index": 0,
+            "admins": ADMIN_IDS,
+            "allgroup": False,
+            "log": []
         }
         save_data(data)
         return data
 
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=2)
 
+# ========== Web Server ==========
 async def start_web_server():
     async def handle(request):
         return web.Response(text="✅ Bot is running on Render")
@@ -45,6 +55,7 @@ async def start_web_server():
     await site.start()
     print(Fore.YELLOW + "Web server running.")
 
+# ========== Ad Sender ==========
 async def ad_sender(client):
     while True:
         try:
@@ -59,8 +70,13 @@ async def ad_sender(client):
                 await asyncio.sleep(60)
                 continue
 
-            print(Fore.CYAN + f"Sending ads to {len(data['groups'])} group(s)...")
-            for gid in data["groups"]:
+            group_ids = data['groups']
+            if data.get("allgroup"):
+                dialogs = await client.get_dialogs()
+                group_ids = [d.entity.id for d in dialogs if d.is_group]
+
+            print(Fore.CYAN + f"Sending ads to {len(group_ids)} group(s)...")
+            for gid in group_ids:
                 try:
                     if data["mode"] == "random":
                         msg = random.choice(saved_messages)
@@ -68,61 +84,57 @@ async def ad_sender(client):
                         index = data["last_sent_ad_index"] % len(saved_messages)
                         msg = saved_messages[index]
                         data["last_sent_ad_index"] += 1
-                        save_data(data)
 
                     await client.forward_messages(gid, msg.id, "me")
                     print(Fore.GREEN + f"Forwarded ad to {gid}")
+
+                    data['log'].append({"time": time.time(), "group": gid, "msg_id": msg.id})
+                    save_data(data)
+
                     await asyncio.sleep(random.uniform(10, 20))
                 except Exception as e:
                     print(Fore.RED + f"Error sending to group {gid}: {e}")
 
-            print(Fore.CYAN + f"Ad cycle done. Sleeping for {data['frequency']} minutes.")
-            await asyncio.sleep(data["frequency"] * 60)
+            save_data(data)
+            await asyncio.sleep(data['frequency'] * 60)
         except Exception as e:
             print(Fore.RED + f"Error in ad_sender: {e}")
             await asyncio.sleep(30)
 
+# ========== Command Handler ==========
 async def command_handler(client):
     @client.on(events.NewMessage(incoming=True))
     async def handler(event):
         sender = await event.get_sender()
+        is_admin = sender.id in load_data().get("admins", [])
         is_private = event.is_private
-        is_admin = sender.id == ADMIN_ID
-        data = load_data()
         cmd = event.raw_text.strip()
+        data = load_data()
 
-        # 1. Non-admins in private: forward message to admin
         if not is_admin and is_private:
-            fwd_text = (
-                f"📩 *New DM Received*\n"
-                f"👤 Name: {sender.first_name}\n"
-                f"🆔 User ID: {sender.id}\n"
-                f"🔗 Username: @{sender.username if sender.username else 'N/A'}\n"
-                f"📝 Message:\n{event.text}"
-            )
-            await client.send_message(ADMIN_ID, fwd_text)
+            msg = f"📩 *New DM Received*\n👤 Name: {sender.first_name}\n🆔 User ID: {sender.id}\n🔗 Username: @{sender.username or 'N/A'}\n📝 Message:\n{cmd}"
+            await client.send_message(ADMIN_IDS[0], msg)
             return
 
-        # 2. Commands from admin (in DM or group)
         if not is_admin:
-            return  # ignore all other users
+            return
 
-        # --- Admin Commands ---
+        parts = cmd.split()
         if cmd.startswith("!addgroup"):
             try:
-                gid = int(cmd.split()[1])
+                gid = int(parts[1])
                 if gid not in data["groups"]:
                     data["groups"].append(gid)
                     save_data(data)
                     await event.reply(f"✅ Added group {gid}")
                 else:
-                    await event.reply("Group already in list.")
+                    await event.reply("Group already added.")
             except:
                 await event.reply("❌ Usage: !addgroup <group_id>")
 
         elif cmd.startswith("!rmgroup"):
             try:
-                gid = int(cmd.split()[1])
+                gid = int(parts[1])
                 data["groups"] = [g for g in data["groups"] if g != gid]
                 save_data(data)
                 await event.reply(f"✅ Removed group {gid}")
@@ -130,72 +142,110 @@ async def command_handler(client):
                 await event.reply("❌ Usage: !rmgroup <group_id>")
 
         elif cmd.startswith("!setfreq"):
-            try:
-                freq = int(cmd.split()[1])
-                data["frequency"] = freq
-                save_data(data)
-                await event.reply(f"✅ Frequency set to {freq} minutes")
-            except:
-                await event.reply("❌ Usage: !setfreq <minutes>")
+            if len(parts) == 2:
+                try:
+                    freq = int(parts[1])
+                    data["frequency"] = freq
+                    save_data(data)
+                    await event.reply(f"✅ Global frequency set to {freq} minutes")
+                except:
+                    await event.reply("❌ Usage: !setfreq <minutes>")
+            elif len(parts) == 3:
+                try:
+                    gid = int(parts[1])
+                    freq = int(parts[2])
+                    data["per_group_freq"][str(gid)] = freq
+                    save_data(data)
+                    await event.reply(f"✅ Frequency for group {gid} set to {freq} minutes")
+                except:
+                    await event.reply("❌ Usage: !setfreq <group_id> <minutes>")
 
         elif cmd.startswith("!setmode"):
-            try:
-                mode = cmd.split()[1].lower()
-                if mode in ["random", "order"]:
-                    data["mode"] = mode
-                    save_data(data)
-                    await event.reply(f"✅ Mode set to {mode}")
-                else:
-                    await event.reply("❌ Use: !setmode random | order")
-            except:
-                await event.reply("❌ Usage: !setmode <random/order>")
+            mode = parts[1].lower()
+            if mode in ["random", "order"]:
+                data["mode"] = mode
+                save_data(data)
+                await event.reply(f"✅ Mode set to {mode}")
+            else:
+                await event.reply("❌ Use: !setmode random | order")
 
         elif cmd == "!status":
-            await event.reply(f"👥 Groups: {data['groups']}\n📤 Mode: {data['mode']}\n⏱ Frequency: {data['frequency']} min")
+            await event.reply(f"👥 Groups: {data['groups']}\n📤 Mode: {data['mode']}\n⏱ Frequency: {data['frequency']} min\n🌐 AllGroup: {data['allgroup']}")
 
-        elif cmd == "!test":
-            try:
-                ads = await client(GetHistoryRequest(peer="me", limit=1, offset_id=0,
-                                                     offset_date=None, max_id=0, min_id=0,
-                                                     add_offset=0, hash=0))
-                if not ads.messages:
-                    await event.reply("❌ No saved message found.")
-                    return
-                msg = ads.messages[0]
-                for gid in data["groups"]:
-                    await client.forward_messages(gid, msg.id, "me")
-                    await asyncio.sleep(3)
-                await event.reply("✅ Sent test ad to all selected groups.")
-            except Exception as e:
-                await event.reply(f"❌ Error: {e}")
+        elif cmd == "!groups":
+            await event.reply("📋 Current groups:\n" + "\n".join(map(str, data["groups"])))
 
-        elif cmd.startswith("!dm"):
-            parts = cmd.split(maxsplit=2)
-            if len(parts) < 3:
-                await event.reply("❌ Usage: !dm <user_id/@username> <message>")
-                return
-            target = parts[1]
-            message = parts[2]
+        elif cmd.startswith("!log"):
             try:
-                entity = await client.get_entity(target)
-                await client.send_message(entity, message)
-                await event.reply(f"✅ Message sent to {target}")
-            except Exception as e:
-                await event.reply(f"❌ Failed to send message: {e}")
+                days = int(parts[1])
+                since = time.time() - (days * 86400)
+                logs = [l for l in data['log'] if l['time'] > since]
+                lines = [f"🕒 {datetime.fromtimestamp(l['time'])} | Group: {l['group']} | MsgID: {l['msg_id']}" for l in logs]
+                await event.reply("\n".join(lines) or "No logs found.")
+            except:
+                await event.reply("❌ Usage: !log <days>")
+
+        elif cmd.startswith("!addadmin"):
+            try:
+                uid = int(parts[1])
+                if uid not in data['admins']:
+                    data['admins'].append(uid)
+                    save_data(data)
+                    await event.reply(f"✅ Added admin {uid}")
+                else:
+                    await event.reply("Already an admin.")
+            except:
+                await event.reply("❌ Usage: !addadmin <user_id>")
+
+        elif cmd == "!uptime":
+            uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
+            await event.reply(f"⏱ Uptime: {uptime}")
+
+        elif cmd == "!backup":
+            await client.send_file(sender.id, DATA_FILE)
+
+        elif cmd == "!restore":
+            await event.reply("📥 Send the backup file now.")
+            response = await client.wait_for(events.NewMessage(from_users=sender.id))
+            if response.file:
+                await response.download_media(file=DATA_FILE)
+                await event.reply("✅ Data restored.")
+
+        elif cmd == "!allgroup on":
+            data['allgroup'] = True
+            save_data(data)
+            await event.reply("✅ All groups mode ON")
+
+        elif cmd == "!allgroup off":
+            data['allgroup'] = False
+            save_data(data)
+            await event.reply("✅ All groups mode OFF")
 
         elif cmd == "!help":
             await event.reply(
                 "🛠 Available Commands:\n"
                 "!addgroup <id> – Add group ID\n"
                 "!rmgroup <id> – Remove group ID\n"
-                "!setfreq <minutes> – Set ad interval\n"
-                "!setmode random/order – Set ad selection mode\n"
-                "!status – View current settings\n"
-                "!test – Send latest ad to groups\n"
-                "!dm <user_id/@username> <msg> – DM a user\n"
+                "!setfreq <min> or !setfreq <group_id> <min>\n"
+                "!setmode random/order\n"
+                "!status – View settings\n"
+                "!groups – List groups\n"
+                "!log <days> – Show ad log\n"
+                "!addadmin <id> – Add admin\n"
+                "!uptime – Show uptime\n"
+                "!backup / !restore – Manage backup\n"
+                "!allgroup on/off – Toggle all-group mode\n"
                 "!help – Show this menu"
             )
 
+        elif cmd == "!join" and event.is_group:
+            gid = event.chat_id
+            if gid not in data['groups']:
+                data['groups'].append(gid)
+                save_data(data)
+                await event.reply("✅ This group has been added to the ad list.")
+
+# ========== Main ==========
 async def main():
     session_name = "session1"
     path = os.path.join(CREDENTIALS_FOLDER, f"{session_name}.json")
@@ -220,12 +270,7 @@ async def main():
         print(Fore.RED + "Not logged in.")
         return
 
-    try:
-        # ✅ Do NOT send bot-startup message to Saved Messages — send to ADMIN only
-        await client.send_message(ADMIN_ID, "✅ Bot started and running on Render.")
-    except:
-        print(Fore.RED + "Couldn't notify admin.")
-
+    await client.send_message(ADMIN_IDS[0], "✅ Bot started and running on Render.")
     await asyncio.gather(
         start_web_server(),
         command_handler(client),
