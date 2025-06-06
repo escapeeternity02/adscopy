@@ -21,7 +21,12 @@ os.makedirs(CREDENTIALS_FOLDER, exist_ok=True)
 def load_data():
     try:
         with open(DATA_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            if isinstance(data.get("groups"), list):
+                print(Fore.YELLOW + "Converting 'groups' from list to dict...")
+                data["groups"] = {str(gid): 15 for gid in data["groups"]}
+                save_data(data)
+            return data
     except:
         print(Fore.RED + "Resetting corrupted data.json...")
         data = {
@@ -107,6 +112,9 @@ async def command_handler(client):
     @client.on(events.NewMessage())
     async def handler(event):
         sender = await event.get_sender()
+        if sender is None:
+            return
+
         is_private = event.is_private
         data = load_data()
         admins = data.get("admins", [])
@@ -166,7 +174,7 @@ async def command_handler(client):
             replied_msg = await event.get_reply_message()
             sender = await event.get_sender()
 
-            if isinstance(sender, User) and sender.bot:
+            if sender is None or (isinstance(sender, User) and sender.bot):
                 return
 
             if replied_msg.from_id and isinstance(replied_msg.from_id, PeerUser):
