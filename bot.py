@@ -186,14 +186,14 @@ async def command_handler():
                     await event.reply(f"✅ Added {uid} to DM list.")
                 else:
                     await event.reply(f"{uid} already in DM list.")
-            elif len(cmd_parts) >= 3:
-                uid = int(cmd_parts[1])
-                msg = " ".join(cmd_parts[2:])
+            elif len(cmd_parts) >= 3 and subcmd != "add":
                 try:
+                    uid = int(cmd_parts[1])
+                    msg = " ".join(cmd_parts[2:])
                     await client.send_message(uid, msg)
                     await event.reply("✅ DM sent.")
-                except:
-                    await event.reply("❌ Failed to send DM.")
+                except Exception as e:
+                    await event.reply(f"❌ Failed to send DM: {e}")
 
         elif cmd == "!test":
             ads = await client(GetHistoryRequest(peer="me", limit=1, offset_id=0,
@@ -204,6 +204,8 @@ async def command_handler():
                 await client.forward_messages(sender.id, latest_msg.id, "me")
                 for gid in data["groups"]:
                     await client.forward_messages(int(gid), latest_msg.id, "me")
+                for uid in data.get("dm", []):
+                    await client.forward_messages(int(uid), latest_msg.id, "me")
             else:
                 await event.reply("No saved messages found.")
 
