@@ -18,6 +18,9 @@ START_TIME = time.time()
 
 os.makedirs(CREDENTIALS_FOLDER, exist_ok=True)
 
+# Global client reference
+client = None
+
 def load_data():
     try:
         with open(DATA_FILE, 'r') as f:
@@ -60,7 +63,8 @@ async def start_web_server():
     await site.start()
     print(Fore.YELLOW + "Web server running.")
 
-async def ad_sender(client):
+async def ad_sender():
+    global client
     while True:
         try:
             data = load_data()
@@ -108,7 +112,9 @@ async def ad_sender(client):
             print(Fore.RED + f"Error in ad_sender: {e}")
             await asyncio.sleep(30)
 
-async def command_handler(client):
+async def command_handler():
+    global client
+
     @client.on(events.NewMessage(incoming=True))
     async def handler(event):
         sender = await event.get_sender()
@@ -173,30 +179,37 @@ async def command_handler(client):
 
     @client.on(events.NewMessage(incoming=True))
     async def group_reply_detector(event):
-        if event.is_group and event.is_reply:
-            replied_msg = await event.get_reply_message()
-            sender = await event.get_sender()
+        sender = await event.get_sender()
+        if not event.is_group or not event.is_reply:
+            return
 
-            if sender is None or (isinstance(sender, User) and sender.bot):
-                return
+        if sender is None or (isinstance(sender, User) and sender.bot):
+            return
 
-            if replied_msg.from_id and isinstance(replied_msg.from_id, PeerUser):
-                if replied_msg.from_id.user_id == (await client.get_me()).id:
-                    group = await event.get_chat()
-                    data = load_data()
-                    for admin in data.get("admins", []):
-                        try:
-                            await client.send_message(
-                                admin,
-                                f"🆕 Someone replied to ad in {group.title}\n"
-                                f"👤 User: {sender.first_name} (@{sender.username})\n"
-                                f"🆔 ID: {sender.id}\n"
-                                f"📝 Reply:\n{event.text}"
-                            )
-                        except Exception as e:
-                            print(f"Failed to send DM to admin: {e}")
+        replied_msg = await event.get_reply_message()
+        if not replied_msg:
+            return
+
+        me = await client.get_me()
+        if replied_msg.from_id and isinstance(replied_msg.from_id, PeerUser):
+            if replied_msg.from_id.user_id == me.id:
+                group = await event.get_chat()
+                data = load_data()
+                for admin in data.get("admins", []):
+                    try:
+                        await client.send_message(
+                            admin,
+                            f"🆕 Someone replied to ad in {group.title}\n"
+                            f"👤 User: {sender.first_name} (@{sender.username})\n"
+                            f"🆔 ID: {sender.id}\n"
+                            f"📝 Reply:\n{event.text}"
+                        )
+                    except Exception as e:
+                        print(f"Failed to send DM to admin: {e}")
 
 async def main():
+    global client
+
     session_name = "session1"
     path = os.path.join(CREDENTIALS_FOLDER, f"{session_name}.json")
 
@@ -215,22 +228,19 @@ async def main():
         proxy=proxy_args
     )
 
-    await client.connect()
-    if not await client.is_user_authorized():
-        print(Fore.RED + "Not logged in.")
-        return
+    await client.start()
 
     try:
         data = load_data()
         for admin in data.get("admins", []):
             await client.send_message(admin, "✅ Bot started and running on Render.")
-    except:
-        print(Fore.RED + "Couldn't notify admin.")
+    except Exception as e:
+        print(Fore.RED + f"Couldn't notify admin: {e}")
 
     await asyncio.gather(
         start_web_server(),
-        command_handler(client),
-        ad_sender(client)
+        command_handler(),
+        ad_sender()
     )
 
 if __name__ == "__main__":
