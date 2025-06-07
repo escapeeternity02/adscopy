@@ -11,7 +11,7 @@ init(autoreset=True)
 
 CREDENTIALS_FOLDER = "sessions"
 DATA_FILE = "data.json"
-ADMIN_ID = 6249999953
+ADMIN_ID = 7356129001
 
 os.makedirs(CREDENTIALS_FOLDER, exist_ok=True)
 
