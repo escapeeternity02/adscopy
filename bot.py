@@ -151,6 +151,17 @@ async def command_handler(client):
             except Exception as e:
                 await event.reply(f"❌ Error: {e}")
 
+        elif cmd == "!groups":
+            dialogs = await client.get_dialogs()
+            groups = [d for d in dialogs if d.is_group]
+            if not groups:
+                await event.reply("❌ No groups found.")
+            else:
+                reply = "👥 Group List:\n"
+                for g in groups:
+                    reply += f"- {g.name} (ID: {g.id})\n"
+                await event.reply(reply)
+
         elif cmd.startswith("!dm"):
             parts = cmd.split(maxsplit=2)
             if len(parts) < 3:
@@ -172,6 +183,7 @@ async def command_handler(client):
                 "!setmode random/order – Set ad selection mode\n"
                 "!status – View current settings\n"
                 "!test – Send latest ad to groups\n"
+                "!groups – List all joined groups\n"
                 "!dm <user_id/@username> <msg> – DM a user\n"
                 "!help – Show this menu"
             )
